@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     spot_mem_ttl: int = 60
     # 快照年龄超过该秒数视为过期数据（stale）
     spot_stale_after: int = 600
+    # 快照网络尝试节流秒数：拉取失败后该时间内直接用缓存，不重复撞网络
+    # （网络故障时避免每次请求都拖满上游超时；正常拉取成功不受影响）
+    spot_retry_interval: int = 60
 
     # K 线默认拉取天数
     kline_default_days: int = 250

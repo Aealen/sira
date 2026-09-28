@@ -1,0 +1,49 @@
+/* SIRA 全局样式
+   当前：功能交互优先阶段——视觉走 Element Plus 默认观感（中性变量），
+   Wise 风格层仅保留为变量注释，最终风格由用户拍板后统一切换。
+   保留：红涨绿跌语义色（功能语义，非风格）。 */
+:root {
+  /* 主题候选 A：Element Plus 默认（当前启用） */
+  --sira-primary: #409eff;
+  --sira-primary-pale: #ecf5ff;
+  /* 主题候选 B：Wise（此前版本，切换时恢复以下值）
+     --sira-primary: #9fe870;  --sira-primary-pale: #e2f6d5;  --sira-canvas-soft: #e8ebe6;
+     --sira-radius-card: 24px; --sira-radius-input: 12px; --sira-radius-sm: 8px; */
+  --sira-ink: #303133;
+  --sira-ink-deep: #303133;
+  --sira-body: #606266;
+  --sira-mute: #909399;
+  --sira-canvas: #ffffff;
+  --sira-canvas-soft: #f5f7fa;
+  --sira-up: #f56c6c;               /* 涨/盈利（红涨绿跌）——EP danger 系 */
+  --sira-up-deep: #c45656;
+  --sira-up-pale: #fef0f0;
+  --sira-down: #67c23a;             /* 跌/亏损 —— EP success 系 */
+  --sira-down-deep: #529b2e;
+  --sira-down-pale: #f0f9eb;
+  --sira-radius-card: 8px;
+  --sira-radius-input: 4px;
+  --sira-radius-sm: 4px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { height: 100%; margin: 0; }
+
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', system-ui, sans-serif;
+  color: var(--sira-ink);
+  background: var(--sira-canvas-soft);
+  font-size: 14px;
+}
+
+.up { color: var(--sira-up); }
+.down { color: var(--sira-down); }
+
+/* 通用卡片 */
+.sira-card {
+  background: var(--sira-canvas);
+  border-radius: var(--sira-radius-card);
+  border: 1px solid #e4e7ed;
+  padding: 16px 20px;
+}

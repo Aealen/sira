@@ -22,6 +22,10 @@ class Base(DeclarativeBase):
 
 def init_db() -> None:
     import app.models  # noqa: F401  确保模型已注册
+    import app.models_analysis  # noqa: F401  风险偏好表（M2）
+    import app.models_invest  # noqa: F401  定投计划与执行流水（M5）
+    import app.models_news  # noqa: F401  资讯与影响标签（M4）
+    import app.models_sim  # noqa: F401  模拟盘账户/持仓/委托/流水（M3）
 
     Base.metadata.create_all(engine)
 

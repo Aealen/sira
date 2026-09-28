@@ -32,6 +32,19 @@ class SpotCache(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
+class Watchlist(Base):
+    """自选列表（用户添加的关注标的，market + code 唯一）。"""
+
+    __tablename__ = "watchlist"
+    __table_args__ = (UniqueConstraint("market", "code", name="uq_watchlist"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    market: Mapped[str] = mapped_column(String(16), index=True)  # a_stock/etf/fund/hk/us
+    code: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
 class KlineCache(Base):
     """日 K 线缓存（含场外基金净值，open=close=high=low=单位净值）。"""
 

@@ -73,9 +73,15 @@ class SpotProvider:
         self._df: pd.DataFrame | None = None
         self._fetched_at: datetime | None = None
         self._mem_fetched_monotonic: float = 0.0
+        self._last_attempt_monotonic: float = 0.0
 
-    def snapshot(self, force: bool = False) -> tuple[pd.DataFrame, datetime, bool]:
-        """返回 (快照, 拉取时间, 是否过期)。拉取失败时回退到最近可用数据。"""
+    def snapshot(self, force: bool = False, loose: bool = False) -> tuple[pd.DataFrame, datetime, bool]:
+        """返回 (快照, 拉取时间, 是否过期)。拉取失败时回退到最近可用数据。
+
+        loose=True 为宽松模式（搜索场景）：标的清单不需要实时价，任何可用缓存直接返回，
+        仅在完全无缓存时才发起网络拉取。
+        网络尝试按 settings.spot_retry_interval 节流：失败后的冷却期内直接走缓存。
+        """
         now = time.monotonic()
         fresh = (
             self._df is not None
@@ -86,6 +92,19 @@ class SpotProvider:
         if fresh:
             return self._df, self._fetched_at, False  # type: ignore[return-value]
 
+        in_cooldown = now - self._last_attempt_monotonic < settings.spot_retry_interval
+        if loose or in_cooldown:
+            # 宽松/冷却：内存缓存 → SQLite 兜底，均标记 stale（诚实展示延迟）
+            if self._df is not None and self._fetched_at is not None:
+                stale = (datetime.now() - self._fetched_at).total_seconds() > settings.spot_stale_after
+                return self._df, self._fetched_at, stale
+            cached = self._load_persisted()
+            if cached is not None:
+                return cached
+            if in_cooldown:
+                raise RuntimeError(f"{self.market} 行情快照不可用（网络失败且无缓存）")
+
+        self._last_attempt_monotonic = now
         try:
             df = self._fetch()
             self._df = df
@@ -147,7 +166,7 @@ class AkshareSource(MarketDataSource):
         keyword = keyword.strip()
         if not keyword:
             return []
-        df, _, _ = self.provider.snapshot()
+        df, _, _ = self.provider.snapshot(loose=True)
         cols = self.provider._cols
         code_col, name_col = cols.code, cols.name
         code_hit = df[code_col].astype(str).str.contains(keyword, case=False, na=False)
@@ -196,7 +215,9 @@ class AkshareSource(MarketDataSource):
 
     def get_kline(self, code: str, days: int = 250) -> tuple[list[Bar], bool]:
         cached = self._read_cache(code, days)
-        if cached and self._cache_is_fresh(code):
+        # 缓存视为可直接使用：日期新鲜且根数基本覆盖请求区间
+        # （否则短缓存（如冷启动只拉过 30 天）会让"3年最大回撤"只覆盖到 2.5 个月）
+        if cached and self._cache_is_fresh(code) and len(cached) >= days * 0.95:
             return cached, False
 
         start = (date.today() - timedelta(days=int(days * 1.6) + 30)).strftime("%Y%m%d")

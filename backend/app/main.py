@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
-from app.routers import market
+from app.routers import analysis, invest, market, news, sim, watchlist
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -20,11 +20,23 @@ app.add_middleware(
 )
 
 app.include_router(market.router)
+app.include_router(watchlist.router)
+app.include_router(analysis.router)
+app.include_router(news.router)
+app.include_router(sim.router)
+app.include_router(invest.router)
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    # 资讯采集调度（60s 一轮，启动即先采一轮）；定投到期检查（每日 09:35）
+    from app.services.news import init_scheduler as news_scheduler
+
+    news_scheduler()
+    from app.services.invest.executor import init_scheduler as invest_scheduler
+
+    invest_scheduler().start()
 
 
 @app.get("/api/health")

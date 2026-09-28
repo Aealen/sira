@@ -4,3 +4,7 @@ data/*.db
 exports/
 Thumbs.db
 nul
+node_modules/
+dist/
+.playwright-mcp/
+*.png
