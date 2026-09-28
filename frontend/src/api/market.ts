@@ -46,7 +46,7 @@ export interface IndexQuote {
   change_pct: number
 }
 
-export interface IntradayBar { time: string; price: number; volume: number }
+export interface IntradayBar { time: string; price: number; avg?: number; volume: number }
 export interface Intraday { prev_close: number | null; bars: IntradayBar[] }
 
 export const marketApi = {

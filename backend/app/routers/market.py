@@ -234,10 +234,19 @@ async def intraday(market: str, code: str) -> IntradayOut:
         hist = df[~is_today]
         if not hist.empty:
             prev_close = float(hist.iloc[-1]["close"])
-        rows = [
-            {"time": str(r["datetime"])[11:16], "price": float(r["close"]), "volume": float(r["volume"])}
-            for _, r in df[is_today].iterrows()
-        ]
+        today_df = df[is_today]
+        rows = []
+        cum_amount, cum_volume = 0.0, 0.0
+        for _, r in today_df.iterrows():
+            vol, amt = float(r["volume"]), float(r.get("amount") or 0.0)
+            cum_volume += vol
+            cum_amount += amt
+            rows.append({
+                "time": str(r["datetime"])[11:16],
+                "price": float(r["close"]),
+                "avg": round(cum_amount / cum_volume, 4) if cum_volume else float(r["close"]),  # 均价线
+                "volume": vol,
+            })
         return rows, prev_close
 
     try:

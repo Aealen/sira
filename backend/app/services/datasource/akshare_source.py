@@ -150,11 +150,60 @@ class SpotProvider:
 
 
 # ---------------------------------------------------------------------------
-# akshare 市场实现
+# 新浪分钟线近实时兜底（东财快照断连时刷新当日报价，仅 A股/场内ETF）
 # ---------------------------------------------------------------------------
+
+_minute_quote_cache: dict[tuple[str, str], tuple[float, dict | None]] = {}
+_MINUTE_QUOTE_TTL = 30.0  # 秒
+
+
+def _minute_quote(market: str, code: str) -> dict | None:
+    """从新浪分钟线提取当日最新报价：price/open/high/low/change(相对昨收)/time。失败返回 None。"""
+    if market not in ("a_stock", "etf"):
+        return None
+    key = (market, code)
+    now = time.monotonic()
+    cached = _minute_quote_cache.get(key)
+    if cached and now - cached[0] < _MINUTE_QUOTE_TTL:
+        return cached[1]
+    try:
+        import akshare as ak  # noqa: PLC0415
+
+        prefix = "sh" if str(code)[0] in "569" else "sz"
+        df = ak.stock_zh_a_minute(symbol=f"{prefix}{code}", period="1")
+        df = df.rename(columns={"day": "datetime"})
+        dt = df["datetime"].astype(str)
+        today = date.today().isoformat()
+        today_df = df[dt.str.startswith(today)]
+        if today_df.empty:
+            raise ValueError("当日无分钟数据（可能非交易日）")
+        hist = df[~dt.str.startswith(today)]
+        prev_close = float(hist.iloc[-1]["close"]) if not hist.empty else None
+        info: dict = {
+            "price": float(today_df.iloc[-1]["close"]),
+            "open": float(today_df.iloc[0]["open"]),
+            "high": float(today_df["high"].astype(float).max()),
+            "low": float(today_df["low"].astype(float).min()),
+            "time": str(today_df.iloc[-1]["datetime"]),
+        }
+        if prev_close:
+            info["change"] = round(info["price"] - prev_close, 4)
+            info["change_pct"] = round((info["price"] - prev_close) / prev_close * 100, 4)
+        _minute_quote_cache[key] = (now, info)
+        return info
+    except Exception:
+        logger.warning("[%s/%s] 分钟线报价兜底失败", market, code)
+        # 失败时沿用旧缓存（若有），并短 TTL 重试
+        _minute_quote_cache[key] = (now - _MINUTE_QUOTE_TTL + 10, cached[1] if cached else None)
+        return cached[1] if cached else None
+
+
+# ---------------------------------------------------------------------------
+# akshare 市场实现
 
 
 class AkshareSource(MarketDataSource):
+
     def __init__(self, provider: SpotProvider, kline_fetch: Callable[[str, str, str], pd.DataFrame]) -> None:
         self.provider = provider
         self._kline_fetch = kline_fetch  # (code, start_date, end_date) -> df
@@ -194,7 +243,7 @@ class AkshareSource(MarketDataSource):
         def col(name: str | None) -> float:
             return _num(r[name]) if name and name in row.columns else 0.0
 
-        return Quote(
+        q = Quote(
             market=self.market,
             code=str(r[cols.code]),
             name=str(r[cols.name]),
@@ -210,6 +259,19 @@ class AkshareSource(MarketDataSource):
             time=fetched_at.strftime("%Y-%m-%d %H:%M:%S"),
             stale=stale,
         )
+        # 快照为缓存兜底（stale）时，用新浪分钟线把当日字段刷新为近实时价
+        if q.stale:
+            mq = _minute_quote(self.market, code)
+            if mq:
+                q.price = mq["price"]
+                q.open = mq.get("open") or q.open
+                q.high = mq.get("high") or q.high
+                q.low = mq.get("low") or q.low
+                q.change = mq.get("change", q.change)
+                q.change_pct = mq.get("change_pct", q.change_pct)
+                q.time = str(mq["time"])
+                q.stale = False
+        return q
 
     # -- K 线 ----------------------------------------------------------------
 

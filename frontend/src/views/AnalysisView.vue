@@ -130,8 +130,9 @@ const isNavLine = computed(() => bars.value.length > 0 && bars.value.every((b) =
 
 type ChartMode = 'day' | 'intraday'
 const supportsIntraday = computed(() => ['a_stock', 'etf'].includes(market.value))
-const chartMode = ref<ChartMode>('day')
-const intradayBars = ref<{ time: string; price: number; volume: number }[]>([])
+/** 默认当日分时（支持的市場），日K可切换；不支持的市场强制日K */
+const chartMode = ref<ChartMode>('intraday')
+const intradayBars = ref<{ time: string; price: number; avg?: number; volume: number }[]>([])
 const intradayPrevClose = ref<number | null>(null)
 let intradayTimer: ReturnType<typeof setInterval> | undefined
 
@@ -145,6 +146,10 @@ async function loadIntraday() {
   }
 }
 
+watch(supportsIntraday, (ok) => {
+  if (!ok) chartMode.value = 'day'
+}, { immediate: true })
+
 watch(chartMode, (m) => {
   clearInterval(intradayTimer)
   intradayTimer = undefined
@@ -153,37 +158,57 @@ watch(chartMode, (m) => {
     void loadIntraday()
     intradayTimer = setInterval(loadIntraday, 8000)
   }
-})
+}, { immediate: true })
 watch([market, code], () => {
   if (chartMode.value === 'intraday') {
     intradayBars.value = []
     void loadIntraday()
-  } else {
-    chartMode.value = 'day' // 不支持分时的市场自动回日K
   }
 })
 onBeforeUnmount(() => clearInterval(intradayTimer))
 
 const intradayOption = computed(() => {
   const prev = intradayPrevClose.value
-  const prices = intradayBars.value.map((b) => b.price)
-  const last = prices.length ? prices[prices.length - 1] : 0
-  const lineColor = prev && last < prev ? DOWN : UP
+  const bs = intradayBars.value
+  const prices = bs.map((b) => b.price)
+  const avgs = bs.map((b) => b.avg ?? b.price)
+  // 主流理财 App 分时惯例：蓝价格线 + 橙均价线 + 灰昨收虚线（红绿留给K线涨跌）
+  const PRICE_COLOR = '#2f6fd8'
+  const AVG_COLOR = '#f5a623'
   return {
     grid: { left: 8, right: 8, top: 12, bottom: 24 },
-    xAxis: { type: 'category' as const, data: intradayBars.value.map((b) => b.time), axisLabel: { fontSize: 10, color: '#909399' } },
+    xAxis: { type: 'category' as const, data: bs.map((b) => b.time), axisLabel: { fontSize: 10, color: '#909399' } },
     yAxis: { type: 'value' as const, scale: true, axisLabel: { fontSize: 10, color: '#909399' }, splitLine: { lineStyle: { color: 'var(--sira-canvas-soft)' } } },
-    tooltip: { trigger: 'axis' as const },
-    series: [{
-      type: 'line' as const,
-      data: prices,
-      showSymbol: false,
-      lineStyle: { width: 1.5, color: lineColor },
-      areaStyle: { color: lineColor, opacity: 0.08 },
-      markLine: prev
-        ? { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#909399', width: 1 }, label: { formatter: `昨收 ${prev}`, fontSize: 10, color: '#909399' }, data: [{ yAxis: prev }] }
-        : undefined,
-    }],
+    tooltip: {
+      trigger: 'axis' as const,
+      formatter: (ps: Array<{ dataIndex: number }>) => {
+        const i = ps[0]?.dataIndex ?? 0
+        const b = bs[i]
+        if (!b) return ''
+        const pct = prev ? ((b.price - prev) / prev * 100).toFixed(2) : '—'
+        return `<div style="font-size:12px;line-height:1.8"><b>${b.time}</b><br>价格 <b style="color:${PRICE_COLOR}">${b.price}</b>（${pct}%）<br>均价 <span style="color:${AVG_COLOR}">${b.avg ?? '—'}</span></div>`
+      },
+    },
+    series: [
+      {
+        name: '价格',
+        type: 'line' as const,
+        data: prices,
+        showSymbol: false,
+        lineStyle: { width: 1.5, color: PRICE_COLOR },
+        areaStyle: { color: PRICE_COLOR, opacity: 0.07 },
+        markLine: prev
+          ? { symbol: 'none', silent: true, lineStyle: { type: 'dashed', color: '#909399', width: 1 }, label: { formatter: `昨收 ${prev}`, fontSize: 10, color: '#909399' }, data: [{ yAxis: prev }] }
+          : undefined,
+      },
+      {
+        name: '均价',
+        type: 'line' as const,
+        data: avgs,
+        showSymbol: false,
+        lineStyle: { width: 1, color: AVG_COLOR },
+      },
+    ],
   }
 })
 

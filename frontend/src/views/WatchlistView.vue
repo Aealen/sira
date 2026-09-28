@@ -36,9 +36,6 @@ const searchInputEl = ref<HTMLInputElement | null>(null)
 /** 市场概览条：主要指数实时行情 */
 const indices = ref<IndexQuote[]>([])
 /** 展开行：`${market}/${code}` -> K线数据 */
-const expandedKey = ref('')
-const expandedBars = ref<Bar[]>([])
-
 const grouped = computed(() => {
   const map = new Map<string, WatchItem[]>()
   for (const it of items.value) {
@@ -54,6 +51,7 @@ let searchTimer: ReturnType<typeof setTimeout> | undefined
 async function refresh() {
   try {
     items.value = await watchlistApi.list()
+    autoExpandAll()
   } catch {
     /* 行情源故障时保留上一次数据，不打断页面 */
   }
@@ -128,35 +126,69 @@ function goAnalysis(it: WatchItem) {
   router.push({ path: '/analysis', query: { market: it.market, code: it.code } })
 }
 
-async function toggleExpand(it: WatchItem) {
-  const key = `${it.market}/${it.code}`
-  if (expandedKey.value === key) {
-    expandedKey.value = ''
-    return
-  }
-  expandedKey.value = key
-  expandedBars.value = []
+/** 展开态：支持多行同时展开；默认全部展开，用户手动收起的记入 collapsed */
+const expandedKeys = ref<Set<string>>(new Set())
+const collapsedKeys = new Set<string>()
+const barsCache = ref<Record<string, Bar[]>>({})
+
+function rowKey(it: WatchItem) {
+  return `${it.market}/${it.code}`
+}
+
+async function ensureKline(it: WatchItem) {
+  const key = rowKey(it)
+  if (barsCache.value[key]) return
   try {
     const k = await marketApi.kline(it.market, it.code, 120)
-    expandedBars.value = k.bars
+    barsCache.value = { ...barsCache.value, [key]: k.bars }
   } catch {
-    /* K线失败时仅收起 */
+    /* K线失败时展示占位 */
   }
 }
 
-const lineOption = computed(() => ({
-  grid: { left: 8, right: 8, top: 8, bottom: 20 },
-  xAxis: { type: 'category' as const, data: expandedBars.value.map(b => b.date.slice(5)), axisLabel: { fontSize: 10, color: '#868685' } },
-  yAxis: { type: 'value' as const, scale: true, axisLabel: { fontSize: 10, color: '#868685' }, splitLine: { lineStyle: { color: 'var(--sira-canvas-soft)' } } },
-  tooltip: { trigger: 'axis' as const },
-  series: [{
-    type: 'line' as const,
-    data: expandedBars.value.map(b => b.close),
-    showSymbol: false,
-    lineStyle: { width: 2, color: '#0e0f0c' },
-    areaStyle: { color: 'rgba(159, 232, 112, 0.25)' },
-  }],
-}))
+async function toggleExpand(it: WatchItem) {
+  const key = rowKey(it)
+  const next = new Set(expandedKeys.value)
+  if (next.has(key)) {
+    next.delete(key)
+    collapsedKeys.add(key)
+  } else {
+    next.add(key)
+    collapsedKeys.delete(key)
+    void ensureKline(it)
+  }
+  expandedKeys.value = next
+}
+
+/** 列表刷新后：新出现的行默认展开并懒加载K线 */
+function autoExpandAll() {
+  const next = new Set(expandedKeys.value)
+  for (const it of items.value) {
+    const key = rowKey(it)
+    if (!collapsedKeys.has(key)) {
+      next.add(key)
+      void ensureKline(it)
+    }
+  }
+  expandedKeys.value = next
+}
+
+const lineOption = (key: string) => {
+  const bars = barsCache.value[key] ?? []
+  return {
+    grid: { left: 8, right: 8, top: 8, bottom: 20 },
+    xAxis: { type: 'category' as const, data: bars.map(b => b.date.slice(5)), axisLabel: { fontSize: 10, color: '#868685' } },
+    yAxis: { type: 'value' as const, scale: true, axisLabel: { fontSize: 10, color: '#868685' }, splitLine: { lineStyle: { color: 'var(--sira-canvas-soft)' } } },
+    tooltip: { trigger: 'axis' as const },
+    series: [{
+      type: 'line' as const,
+      data: bars.map(b => b.close),
+      showSymbol: false,
+      lineStyle: { width: 2, color: '#2f6fd8' },
+      areaStyle: { color: 'rgba(47, 111, 216, 0.10)' },
+    }],
+  }
+}
 
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 let indexTimer: ReturnType<typeof setInterval> | undefined
@@ -241,11 +273,11 @@ onBeforeUnmount(() => {
           </div>
           <el-tag v-if="it.stale" size="small" type="info" effect="plain">延迟</el-tag>
           <div class="row-time">{{ it.time || '—' }}</div>
-          <el-icon class="row-chart" title="展开迷你K线" @click.stop="toggleExpand(it)"><TrendCharts /></el-icon>
+          <el-icon class="row-chart" :title="expandedKeys.has(`${it.market}/${it.code}`) ? '收起迷你K线' : '展开迷你K线'" @click.stop="toggleExpand(it)"><TrendCharts /></el-icon>
           <el-icon class="row-del" title="移出自选" @click.stop="removeItem(it.market, it.code, it.name)"><Delete /></el-icon>
         </div>
-        <div v-if="expandedKey === `${it.market}/${it.code}`" class="mini-chart">
-          <VChart v-if="expandedBars.length" :option="lineOption" autoresize style="height: 160px" />
+        <div v-if="expandedKeys.has(`${it.market}/${it.code}`)" class="mini-chart">
+          <VChart v-if="(barsCache[`${it.market}/${it.code}`] ?? []).length" :option="lineOption(`${it.market}/${it.code}`)" autoresize style="height: 160px" />
           <div v-else class="chart-loading">加载 K 线中…</div>
         </div>
       </div>
