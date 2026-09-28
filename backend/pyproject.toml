@@ -1,0 +1,18 @@
+[project]
+name = "sira-backend"
+version = "0.1.0"
+description = "SIRA (Stock Investment Risk Assessment) 后端：行情拉取、风险分析、资讯收集、模拟盘"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "akshare>=1.18.96",
+    "apscheduler>=3.11.3",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "numpy>=2.5.3",
+    "pandas>=3.0.6",
+    "pydantic-settings>=2.15.0",
+    "pytest>=9.1.1",
+    "sqlalchemy>=2.0.54",
+    "uvicorn[standard]>=0.53.0",
+]

@@ -1,0 +1,6 @@
+.zcode/
+.codegraph/
+data/*.db
+exports/
+Thumbs.db
+nul
